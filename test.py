@@ -1,8 +1,9 @@
-from chortle import ExtensionBuilder
+from chortle import build_extension, Function
 
 
-if __name__ == '__main__':
-    builder = ExtensionBuilder('testplg', verbose=True)
-    builder.add_function('rot13', 'test_fns.rot13')
-    builder.add_function('product', 'test_fns.product')
-    builder.build()
+if __name__ == "__main__":
+    functions = [
+        Function("rot13", "test_fns.rot13"),
+        Function("product", "test_fns.product"),
+    ]
+    build_extension("testplg", functions=functions, verbose=True)
