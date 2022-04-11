@@ -1,7 +1,7 @@
 import json
 
-from seriespy import ffi, lib
-from seriespy.lib import sqlite3_api
+from csvpy import ffi, lib
+from csvpy.lib import sqlite3_api
 
 from vtab_generator import generate_series
 
@@ -10,24 +10,47 @@ HIDDEN_COL_NAMES = ["start", "stop", "step"]
 COL_NAMES = VISIBLE_COL_NAMES + HIDDEN_COL_NAMES
 
 
-class Cursor:
-    next_key = 0
-    cursors = {}
+class Table:
+    tables = {}
 
     @classmethod
-    def open(cls):
-        key = cls.next_key
-        cls.next_key += 1
-        cls.cursors[key] = cls(key)
+    def connect(cls, params):
+        key = len(cls.tables)
+        cls.tables[key] = cls(key, params)
         return key
 
     @classmethod
     def from_ptr(cls, ptr):
-        p = ffi.cast("series_cursor *", ptr)
-        return cls.cursors[p.cursor_key]
+        p = ffi.cast("csv_table *", ptr)
+        return cls.tables[p.table_key]
 
-    def __init__(self, key):
+    def __init__(self, key, params):
         self.key = key
+        self.params = params
+        self.cursors = {}
+
+    def disconnect(self):
+        del self.tables[self.key]
+
+
+class Cursor:
+    @classmethod
+    def open(cls, table_key):
+        table = Table.tables[table_key]
+        cursor_key = len(table.cursors)
+        table.cursors[cursor_key] = cls(cursor_key, table)
+        return cursor_key
+
+    @classmethod
+    def from_ptr(cls, ptr):
+        p = ffi.cast("csv_cursor *", ptr)
+        pVtab = ffi.cast("csv_table *", p.base.pVtab)
+        table = Table.from_ptr(pVtab)
+        return table.cursors[p.cursor_key]
+
+    def __init__(self, key, table):
+        self.key = key
+        self.table = table
         self.generator = None
         self.next_value = None
         self.hidden_values = None
@@ -43,29 +66,45 @@ class Cursor:
             self.done = True
 
     def close(self):
-        del self.cursors[self.key]
+        del self.table.cursors[self.key]
 
 
 def connect(db, pAux, argc, argv, ppVtab, pzErr):
     visible_col_defs = ", ".join(col_name for col_name in VISIBLE_COL_NAMES)
     hidden_col_defs = ", ".join(col_name + " hidden" for col_name in HIDDEN_COL_NAMES)
     sql = f"CREATE TABLE t({visible_col_defs}, {hidden_col_defs})".encode("utf8")
+
+    params = {}
+    try:
+        for i in range(3, argc):
+            arg = ffi.string(argv[i]).decode("utf8")
+            key, value = arg.split("=")
+            if key not in HIDDEN_COL_NAMES:
+                return lib.SQLITE_ERROR
+            params[key] = int(value)
+    except ValueError:
+        return lib.SQLITE_ERROR
+
     rc = sqlite3_api.declare_vtab(db, sql)
     if rc == lib.SQLITE_OK:
-        ppVtab[0] = sqlite3_api.malloc(ffi.sizeof("sqlite3_vtab"))
+        ppVtab[0] = sqlite3_api.malloc(ffi.sizeof("csv_table"))
+        pVtab = ffi.cast("csv_table *", ppVtab[0])
+        pVtab.table_key = Table.connect(params)
 
     return rc
 
 
 def disconnect(pVtab):
+    Table.from_ptr(pVtab).disconnect()
     sqlite3_api.free(pVtab)
     return lib.SQLITE_OK
 
 
-def open_(p, ppCursor):
-    ppCursor[0] = sqlite3_api.malloc(ffi.sizeof("series_cursor"))
-    pCur = ffi.cast("series_cursor *", ppCursor[0])
-    pCur.cursor_key = Cursor.open()
+def open_(pVtab, ppCursor):
+    table = Table.from_ptr(pVtab)
+    ppCursor[0] = sqlite3_api.malloc(ffi.sizeof("csv_cursor"))
+    pCur = ffi.cast("csv_cursor *", ppCursor[0])
+    pCur.cursor_key = Cursor.open(table.key)
     return lib.SQLITE_OK
 
 
@@ -110,6 +149,9 @@ def filter_(pVtabCursor, idxNum, idxStr, argc, argv):
 
     params = {"step": 1}
 
+    for k, v in cursor.table.params.items():
+        params[k] = v
+
     for constraint, expr in zip(constraints, exprs):
         params[constraint["col_name"]] = expr
 
@@ -125,11 +167,7 @@ def filter_(pVtabCursor, idxNum, idxStr, argc, argv):
 
             break
 
-    try:
-        cursor.hidden_values = [params[col_name] for col_name in HIDDEN_COL_NAMES]
-    except KeyError:
-        return lib.SQLITE_ERROR
-
+    cursor.hidden_values = [params[col_name] for col_name in HIDDEN_COL_NAMES]
     cursor.generator = generate_series(**params)
     cursor.step()
 
@@ -151,6 +189,7 @@ def best_index(tab, pIdxInfo):
             pIdxInfo.orderByConsumed = True
 
     idx_data = {"constraints": constraints, "order_bys": order_bys}
+    # print(idx_data)
 
     idx_str = json.dumps(idx_data).encode("utf8")
     l = len(idx_str) + 1

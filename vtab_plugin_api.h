@@ -66,8 +66,14 @@ struct sqlite3_index_info {
   sqlite3_uint64 colUsed;    /* Input: Mask of columns used by statement */
 };
 
-typedef struct series_cursor series_cursor;
-struct series_cursor {
+typedef struct csv_table csv_table;
+struct csv_table {
+  sqlite3_vtab base;  /* Base class - must be first */
+  int table_key;
+};
+
+typedef struct csv_cursor csv_cursor;
+struct csv_cursor {
   sqlite3_vtab_cursor base;  /* Base class - must be first */
   int cursor_key;
 };
@@ -403,16 +409,19 @@ struct sqlite3_api_routines {
 
 const sqlite3_api_routines *sqlite3_api;
 
-static int seriesConnect(sqlite3 *db, void *pAux, int argc,
+static int csvCreate(sqlite3 *db, void *pAux, int argc,
                          const char *const *argv, sqlite3_vtab **ppVtab,
                          char **pzErr);
-static int seriesDisconnect(sqlite3_vtab *pVtab);
-static int seriesOpen(sqlite3_vtab *p, sqlite3_vtab_cursor **ppCursor);
-static int seriesClose(sqlite3_vtab_cursor *cur);
-static int seriesNext(sqlite3_vtab_cursor *cur);
-static int seriesColumn(sqlite3_vtab_cursor *cur, sqlite3_context *ctx, int i);
-static int seriesRowid(sqlite3_vtab_cursor *cur, sqlite_int64 *pRowid);
-static int seriesEof(sqlite3_vtab_cursor *cur);
-static int seriesFilter(sqlite3_vtab_cursor *pVtabCursor, int idxNum,
+static int csvConnect(sqlite3 *db, void *pAux, int argc,
+                         const char *const *argv, sqlite3_vtab **ppVtab,
+                         char **pzErr);
+static int csvDisconnect(sqlite3_vtab *pVtab);
+static int csvOpen(sqlite3_vtab *p, sqlite3_vtab_cursor **ppCursor);
+static int csvClose(sqlite3_vtab_cursor *cur);
+static int csvNext(sqlite3_vtab_cursor *cur);
+static int csvColumn(sqlite3_vtab_cursor *cur, sqlite3_context *ctx, int i);
+static int csvRowid(sqlite3_vtab_cursor *cur, sqlite_int64 *pRowid);
+static int csvEof(sqlite3_vtab_cursor *cur);
+static int csvFilter(sqlite3_vtab_cursor *pVtabCursor, int idxNum,
                         const char *idxStr, int argc, sqlite3_value **argv);
-static int seriesBestIndex(sqlite3_vtab *tab, sqlite3_index_info *pIdxInfo);
+static int csvBestIndex(sqlite3_vtab *tab, sqlite3_index_info *pIdxInfo);
