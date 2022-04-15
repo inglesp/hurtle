@@ -1,9 +1,12 @@
-from chortle import build_extension, Function
+from chortle import build_extension
 
 
 if __name__ == "__main__":
-    functions = [
-        Function("rot13", "test_fns.rot13"),
-        Function("product", "test_fns.product"),
-    ]
-    build_extension("testplg", functions=functions, verbose=True)
+    build_extension(
+        "testplg",
+        functions={
+            "rot13": "test_fns.rot13",
+            "product": "test_fns.product",
+        },
+        verbose=True,
+    )

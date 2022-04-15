@@ -11,14 +11,17 @@ import jinja2
 def build_extension(name, functions=None, verbose=True):
     assert name.isalpha()
 
-    functions = functions or []
-
     debug_path = pathlib.Path("debug")
 
     shutil.rmtree(debug_path, ignore_errors=True)
     os.makedirs(debug_path)
 
-    ctx = {"extension_name": name, "functions": functions}
+    ctx = {
+        "extension_name": name,
+        "functions": [
+            function_ctx(name, path) for name, path in (functions or {}).items()
+        ],
+    }
 
     ffidebuger = cffi.FFI()
     ffidebuger.embedding_api(render_template("plugin_api.h", ctx))
@@ -60,21 +63,25 @@ def import_attr(dotted_path):
         raise ImportError(msg)
 
 
-class Function:
-    def __init__(self, name, path):
-        self.name = name
-        self.path = path
+def common_ctx(name, path):
+    return {
+        "name": name,
+        "namespaced_name": f"__chortle_{name}",
+        "path": path,
+    }
 
-        self.namespaced_name = f"__chortle_{self.name}"
 
-        fn = import_attr(path)
-        sig = inspect.signature(fn)
-        params = sig.parameters.values()
+def function_ctx(name, path):
+    fn = import_attr(path)
+    sig = inspect.signature(fn)
+    params = sig.parameters.values()
 
-        if any(p.kind.name in ["KEYWORD_ONLY", "VAR_KEYWORD"] for p in params):
-            raise ValueError("Cannot create function with keyword arguments")
+    if any(p.kind.name in ["KEYWORD_ONLY", "VAR_KEYWORD"] for p in params):
+        raise ValueError("Cannot create function with keyword arguments")
 
-        if any(p.kind.name == "VAR_POSITIONAL" for p in params):
-            self.num_args = -1
-        else:
-            self.num_args = len(params)
+    if any(p.kind.name == "VAR_POSITIONAL" for p in params):
+        num_args = -1
+    else:
+        num_args = len(params)
+
+    return common_ctx(name, path) | {"num_args": num_args}
