@@ -59,5 +59,5 @@ static sqlite3_module csvModule = {
 int sqlite3_csvpy_init(sqlite3 *db, char **pzErrMsg,
                         const sqlite3_api_routines *pApi) {
   SQLITE_EXTENSION_INIT2(pApi);
-  return sqlite3_create_module(db, "generate_series", &csvModule, 0);
+  return sqlite3_create_module(db, "csv", &csvModule, 0);
 }

@@ -1,32 +1,46 @@
-import json
+import csv
 
 from csvpy import ffi, lib
 from csvpy.lib import sqlite3_api
 
-from vtab_generator import generate_series
+SQLITE_TRANSIENT = ffi.cast("sqlite3_destructor_type", -1)
 
-VISIBLE_COL_NAMES = ["value"]
-HIDDEN_COL_NAMES = ["start", "stop", "step"]
-COL_NAMES = VISIBLE_COL_NAMES + HIDDEN_COL_NAMES
+
+class Impl:
+    def __init__(self, argv):
+        print(argv)
+        k, v = argv[3].split("=")
+        assert k == "filename"
+        self.filename = v
+
+    def schema(self):
+        return ["code", "term"]
+
+    def generator(self):
+        with open(self.filename) as f:
+            reader = csv.reader(f)
+            for row in reader:
+                yield row
 
 
 class Table:
     tables = {}
 
     @classmethod
-    def connect(cls, params):
+    def connect(cls, impl):
         key = len(cls.tables)
-        cls.tables[key] = cls(key, params)
-        return key
+        table = cls(key, impl)
+        cls.tables[key] = table
+        return table
 
     @classmethod
     def from_ptr(cls, ptr):
         p = ffi.cast("csv_table *", ptr)
         return cls.tables[p.table_key]
 
-    def __init__(self, key, params):
+    def __init__(self, key, impl):
         self.key = key
-        self.params = params
+        self.impl = impl
         self.cursors = {}
 
     def disconnect(self):
@@ -52,8 +66,7 @@ class Cursor:
         self.key = key
         self.table = table
         self.generator = None
-        self.next_value = None
-        self.hidden_values = None
+        self.next_values = None
         self.done = False
 
     def step(self):
@@ -61,8 +74,9 @@ class Cursor:
         assert not self.done
 
         try:
-            self.next_value = next(self.generator)
+            self.next_values = next(self.generator)
         except StopIteration:
+            self.next_values = None
             self.done = True
 
     def close(self):
@@ -70,26 +84,17 @@ class Cursor:
 
 
 def connect(db, pAux, argc, argv, ppVtab, pzErr):
-    visible_col_defs = ", ".join(col_name for col_name in VISIBLE_COL_NAMES)
-    hidden_col_defs = ", ".join(col_name + " hidden" for col_name in HIDDEN_COL_NAMES)
-    sql = f"CREATE TABLE t({visible_col_defs}, {hidden_col_defs})".encode("utf8")
-
-    params = {}
-    try:
-        for i in range(3, argc):
-            arg = ffi.string(argv[i]).decode("utf8")
-            key, value = arg.split("=")
-            if key not in HIDDEN_COL_NAMES:
-                return lib.SQLITE_ERROR
-            params[key] = int(value)
-    except ValueError:
-        return lib.SQLITE_ERROR
+    argv = [ffi.string(argv[i]).decode("utf8") for i in range(argc)]
+    impl = Impl(argv)
+    table = Table.connect(impl)
+    sql = f"CREATE TABLE t({', '.join(impl.schema())})".encode("utf8")
+    print(sql)
 
     rc = sqlite3_api.declare_vtab(db, sql)
     if rc == lib.SQLITE_OK:
         ppVtab[0] = sqlite3_api.malloc(ffi.sizeof("csv_table"))
         pVtab = ffi.cast("csv_table *", ppVtab[0])
-        pVtab.table_key = Table.connect(params)
+        pVtab.table_key = table.key
 
     return rc
 
@@ -122,8 +127,8 @@ def next_(cur):
 
 def column(cur, ctx, i):
     cursor = Cursor.from_ptr(cur)
-    values = [cursor.next_value] + cursor.hidden_values
-    sqlite3_api.result_int64(ctx, values[i])
+    value = cursor.next_values[i]
+    sqlite3_api.result_text(ctx, value.encode("utf8"), -1, SQLITE_TRANSIENT)
     return lib.SQLITE_OK
 
 
@@ -141,96 +146,10 @@ def eof(cur):
 
 def filter_(pVtabCursor, idxNum, idxStr, argc, argv):
     cursor = Cursor.from_ptr(pVtabCursor)
-
-    idx_data = json.loads(ffi.string(idxStr))
-    constraints = idx_data["constraints"]
-    order_bys = idx_data["order_bys"]
-    exprs = [sqlite3_api.value_int64(argv[i]) for i in range(argc)]
-
-    params = {"step": 1}
-
-    for k, v in cursor.table.params.items():
-        params[k] = v
-
-    for constraint, expr in zip(constraints, exprs):
-        params[constraint["col_name"]] = expr
-
-    params["order_by"] = []
-
-    for order_by in order_bys:
-        col_name = order_by["col_name"]
-        if col_name in VISIBLE_COL_NAMES:
-            if order_by["desc"]:
-                params["order_by"].append(f"-{col_name}")
-            else:
-                params["order_by"].append(col_name)
-
-            break
-
-    cursor.hidden_values = [params[col_name] for col_name in HIDDEN_COL_NAMES]
-    cursor.generator = generate_series(**params)
+    cursor.generator = cursor.table.impl.generator()
     cursor.step()
-
     return lib.SQLITE_OK
 
 
 def best_index(tab, pIdxInfo):
-    constraints = parse_constraints(pIdxInfo.nConstraint, pIdxInfo.aConstraint)
-    constrained_col_names = [c["col_name"] for c in constraints]
-
-    for constraint in constraints:
-        constraint_ix = constraint["constraint_ix"]
-        pIdxInfo.aConstraintUsage[constraint_ix].argvIndex = constraint_ix + 1
-
-    order_bys = parse_order_bys(pIdxInfo.nOrderBy, pIdxInfo.aOrderBy)
-
-    for order_by in order_bys:
-        if order_by["col_name"] in VISIBLE_COL_NAMES:
-            pIdxInfo.orderByConsumed = True
-
-    idx_data = {"constraints": constraints, "order_bys": order_bys}
-    # print(idx_data)
-
-    idx_str = json.dumps(idx_data).encode("utf8")
-    l = len(idx_str) + 1
-    s = sqlite3_api.malloc(l)
-    ffi.memmove(s, idx_str, l)
-    pIdxInfo.idxStr = s
-    pIdxInfo.needToFreeIdxStr = True
-
     return lib.SQLITE_OK
-
-
-def parse_constraints(nConstraint, aConstraint):
-    constraints = []
-
-    for ix in range(nConstraint):
-        pConstraint = aConstraint[ix]
-        constraints.append(
-            {
-                "constraint_ix": ix,
-                "col_ix": pConstraint.iColumn,
-                "col_name": COL_NAMES[pConstraint.iColumn],
-                "usable": pConstraint.usable,
-                "op": pConstraint.op,
-            }
-        )
-
-    return constraints
-
-
-def parse_order_bys(nOrderBy, aOrderBy):
-    order_bys = []
-
-    for ix in range(nOrderBy):
-        pOrderBy = aOrderBy[ix]
-        order_bys.append(
-            {
-                "order_by_ix": ix,
-                "col_ix": pOrderBy.iColumn,
-                "col_name": COL_NAMES[pOrderBy.iColumn],
-                "desc": pOrderBy.desc,
-            }
-        )
-
-    return order_bys
