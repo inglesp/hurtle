@@ -7,14 +7,15 @@ import shutil
 import cffi
 import jinja2
 
+DEBUG_PATH = pathlib.Path("debug")
+TEMPLATES_PATH = pathlib.Path(__file__).parent / "templates"
+
 
 def build_extension(name, functions=None, verbose=True):
     assert name.isalpha()
 
-    debug_path = pathlib.Path("debug")
-
-    shutil.rmtree(debug_path, ignore_errors=True)
-    os.makedirs(debug_path)
+    shutil.rmtree(DEBUG_PATH, ignore_errors=True)
+    os.makedirs(DEBUG_PATH)
 
     ctx = {
         "extension_name": name,
@@ -23,25 +24,23 @@ def build_extension(name, functions=None, verbose=True):
         ],
     }
 
-    ffidebuger = cffi.FFI()
-    ffidebuger.embedding_api(render_template("plugin_api.h", ctx))
-    ffidebuger.embedding_init_code(render_template("plugin.py", ctx))
-    ffidebuger.set_source(name, render_template("plugin.c", ctx))
-    ffidebuger.compile(verbose=verbose)
+    ffi = cffi.FFI()
+    ffi.embedding_api(render_template("plugin_api.h", ctx))
+    ffi.embedding_init_code(render_template("plugin.py", ctx))
+    ffi.set_source(name, render_template("plugin.c", ctx))
+    ffi.compile(verbose=verbose)
 
-    os.rename(name + ".c", debug_path / (name + ".c"))
-    os.rename(name + ".o", debug_path / (name + ".o"))
+    os.rename(name + ".c", DEBUG_PATH / (name + ".c"))
+    os.rename(name + ".o", DEBUG_PATH / (name + ".o"))
 
 
 def render_template(name, ctx):
-    templates_path = pathlib.Path("templates")
-    with open(templates_path / (name + ".tpl")) as f:
+    with open(TEMPLATES_PATH / (name + ".tpl")) as f:
         tpl = jinja2.Template(f.read())
 
     rendered = tpl.render(ctx)
 
-    debug_path = pathlib.Path("debug")
-    with open(debug_path / name, "w") as f:
+    with open(DEBUG_PATH / name, "w") as f:
         f.write(rendered)
 
     return rendered
