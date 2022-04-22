@@ -65,7 +65,7 @@ def import_attr(dotted_path):
 def common_ctx(name, path):
     return {
         "name": name,
-        "namespaced_name": f"__chortle_{name}",
+        "namespaced_name": f"__myrtle_{name}",
         "path": path,
     }
 
