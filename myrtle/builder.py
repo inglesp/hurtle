@@ -1,11 +1,12 @@
 import inspect
-import importlib
 import os
 import pathlib
 import shutil
 
 import cffi
 import jinja2
+
+from .import_helpers import import_attr
 
 DEBUG_PATH = pathlib.Path("debug")
 TEMPLATES_PATH = pathlib.Path(__file__).parent / "templates"
@@ -44,22 +45,6 @@ def render_template(name, ctx):
         f.write(rendered)
 
     return rendered
-
-
-def import_attr(dotted_path):
-    try:
-        module_path, attr_name = dotted_path.rsplit(".", 1)
-    except ValueError:
-        msg = "%s doesn't look like a module path" % dotted_path
-        raise ImportError(msg)
-
-    module = importlib.import_module(module_path)
-
-    try:
-        return getattr(module, attr_name)
-    except AttributeError:
-        msg = 'Module "%s" does not define "%s"' % (module_path, attr_name)
-        raise ImportError(msg)
 
 
 def common_ctx(name, path):

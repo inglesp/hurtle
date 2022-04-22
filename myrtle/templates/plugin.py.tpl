@@ -1,4 +1,5 @@
-from myrtle.helpers import import_attr, call_function
+from myrtle.import_helpers import import_attr
+from myrtle.interface import call_function
 
 from {{ extension_name }} import ffi, lib
 
