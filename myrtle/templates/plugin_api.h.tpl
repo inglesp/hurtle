@@ -293,5 +293,5 @@ struct sqlite3_api_routines {
 const sqlite3_api_routines *sqlite3_api;
 
 {% for fn in functions %}
-static void {{ fn.namespaced_name }}(sqlite3_context *context, int argc, sqlite3_value **argv);
+{% include "function.h.tpl" %}
 {% endfor %}

@@ -4,7 +4,7 @@ import pathlib
 import shutil
 
 import cffi
-import jinja2
+from jinja2 import Environment, PackageLoader
 
 from .import_helpers import import_attr
 
@@ -36,8 +36,8 @@ def build_extension(name, functions=None, verbose=True):
 
 
 def render_template(name, ctx):
-    with open(TEMPLATES_PATH / (name + ".tpl")) as f:
-        tpl = jinja2.Template(f.read())
+    env = Environment(loader=PackageLoader("myrtle"))
+    tpl = env.get_template(name + ".tpl")
 
     rendered = tpl.render(ctx)
 
