@@ -2,7 +2,7 @@
 SQLITE_EXTENSION_INIT1
 
 {% for fn in functions %}
-static void {{ fn.namespaced_name }}(sqlite3_context *context, int argc, sqlite3_value **argv);
+{% include "function_decls.c.tpl" %}
 {% endfor %}
 
 int sqlite3_{{ extension_name}}_init(sqlite3 *db, char **pzErrMsg,
