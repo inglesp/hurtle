@@ -12,7 +12,7 @@ DEBUG_PATH = pathlib.Path("debug")
 TEMPLATES_PATH = pathlib.Path(__file__).parent / "templates"
 
 
-def build_extension(name, functions=None, verbose=True):
+def build_extension(name, functions=None, virtual_tables=None, verbose=True):
     assert name.isalpha()
 
     shutil.rmtree(DEBUG_PATH, ignore_errors=True)
@@ -22,6 +22,10 @@ def build_extension(name, functions=None, verbose=True):
         "extension_name": name,
         "functions": [
             function_ctx(name, path) for name, path in (functions or {}).items()
+        ],
+        "virtual_tables": [
+            virtual_table_ctx(name, path)
+            for name, path in (virtual_tables or {}).items()
         ],
     }
 
@@ -69,3 +73,7 @@ def function_ctx(name, path):
         num_args = len(params)
 
     return common_ctx(name, path) | {"num_args": num_args}
+
+
+def virtual_table_ctx(name, path):
+    return common_ctx(name, path)

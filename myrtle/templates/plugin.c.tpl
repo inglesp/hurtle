@@ -5,6 +5,10 @@ SQLITE_EXTENSION_INIT1
 {% include "function_decls.c.tpl" %}
 {% endfor %}
 
+{% for vtab in virtual_tables %}
+{% include "virtual_table_decls.c.tpl" %}
+{% endfor %}
+
 int sqlite3_{{ extension_name}}_init(sqlite3 *db, char **pzErrMsg,
                             const sqlite3_api_routines *pApi) {
   int rc;
@@ -12,6 +16,10 @@ int sqlite3_{{ extension_name}}_init(sqlite3 *db, char **pzErrMsg,
 
 {% for fn in functions %}
 {% include "function.c.tpl" %}
+{% endfor %}
+
+{% for vtab in virtual_tables %}
+{% include "virtual_table.c.tpl" %}
 {% endfor %}
 
   return SQLITE_OK;
