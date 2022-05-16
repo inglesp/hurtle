@@ -8,8 +8,8 @@ class Interface:
     def build_function(self, fn):
         return Function(self, fn)
 
-    def build_virtual_table(self, table):
-        return VirtualTable(self, table)
+    def build_virtual_table(self, table_cls):
+        return VirtualTable(self, table_cls)
 
     def get_py_val(self, sqlite_value):
         sqlite_type = self.sqlite3_api.value_type(sqlite_value)
@@ -63,51 +63,85 @@ class Function:
 
 
 class VirtualTable:
-    def __init__(self, interface, table):
+    tables = {}
+    cursors = {}
+
+    def __init__(self, interface, table_cls):
         self.ffi = interface.ffi
         self.lib = interface.lib
         self.sqlite3_api = interface.sqlite3_api
-        self.table = table
+        self.table_cls = table_cls
+
+    def table_key_from_pointer(self, ptr):
+        p = self.ffi.cast("__myrtle_csv_table *", ptr)
+        return p.table_key
+
+    def table_from_pointer(self, ptr):
+        key = self.table_key_from_pointer(ptr)
+        return self.tables[key]
+
+    def cursor_key_from_pointer(self, ptr):
+        p = self.ffi.cast("__myrtle_csv_cursor *", ptr)
+        return p.cursor_key
+
+    def cursor_from_pointer(self, ptr):
+        key = self.cursor_key_from_pointer(ptr)
+        return self.cursors[key]
 
     def connect(self, db, pAux, argc, argv, ppVtab, pzErr):
         argv = [self.ffi.string(argv[i]).decode("utf8") for i in range(argc)]
-        impl = self.table(argv)
-        table = Table.connect(impl)
-        sql = f"CREATE TABLE t({', '.join(impl.schema())})".encode("utf8")
-        print(sql)
-
+        table = self.table_cls()
+        table.parse_args(argv)
+        key = len(self.tables)
+        sql = f"CREATE TABLE t({', '.join(table.schema())})".encode("utf8")
         rc = self.sqlite3_api.declare_vtab(db, sql)
         if rc == self.lib.SQLITE_OK:
             ppVtab[0] = self.sqlite3_api.malloc(self.ffi.sizeof("__myrtle_csv_table"))
             pVtab = self.ffi.cast("__myrtle_csv_table *", ppVtab[0])
-            pVtab.table_key = table.key
+            pVtab.table_key = key
+            self.tables[key] = table
+        else:
+            # TODO
+            pass
 
         return rc
 
     def disconnect(self, pVtab):
-        Table.from_ptr(self.ffi, pVtab).disconnect()
+        key = self.table_key_from_pointer(pVtab)
+        del self.tables[key]
         self.sqlite3_api.free(pVtab)
         return self.lib.SQLITE_OK
 
     def open_(self, pVtab, ppCursor):
-        table = Table.from_ptr(self.ffi, pVtab)
+        key = len(self.cursors)
         ppCursor[0] = self.sqlite3_api.malloc(self.ffi.sizeof("__myrtle_csv_cursor"))
         pCur = self.ffi.cast("__myrtle_csv_cursor *", ppCursor[0])
-        pCur.cursor_key = Cursor.open(table.key)
+        pCur.cursor_key = key
+        self.cursors[key] = Cursor()
         return self.lib.SQLITE_OK
 
     def close_(self, cur):
-        Cursor.from_ptr(self.ffi, cur).close()
+        key = self.cursor_key_from_pointer(cur)
+        del self.cursors[key]
         self.sqlite3_api.free(cur)
         return self.lib.SQLITE_OK
 
     def next_(self, cur):
-        cursor = Cursor.from_ptr(self.ffi, cur)
-        cursor.step()
+        cursor = self.cursor_from_pointer(cur)
+
+        assert cursor.generator is not None
+        assert not cursor.done
+
+        try:
+            cursor.next_values = next(cursor.generator)
+        except StopIteration:
+            cursor.next_values = None
+            cursor.done = True
+
         return self.lib.SQLITE_OK
 
     def column(self, cur, ctx, i):
-        cursor = Cursor.from_ptr(self.ffi, cur)
+        cursor = self.cursor_from_pointer(cur)
         value = cursor.next_values[i]
         SQLITE_TRANSIENT = self.ffi.cast("sqlite3_destructor_type", -1)
         self.sqlite3_api.result_text(ctx, value.encode("utf8"), -1, SQLITE_TRANSIENT)
@@ -115,79 +149,27 @@ class VirtualTable:
 
     def row_id(self, cur, pRowid):
         # TODO
-        # cursor = Cursor.from_ptr(self.ffi, cur)
+        # cursor = self.cursor_from_pointer(cur)
         pRowid[0] = 10
         return self.lib.SQLITE_OK
 
     def eof(self, cur):
-        cursor = Cursor.from_ptr(self.ffi, cur)
+        cursor = self.cursor_from_pointer(cur)
         return cursor.done
 
     def filter_(self, pVtabCursor, idxNum, idxStr, argc, argv):
-        cursor = Cursor.from_ptr(self.ffi, pVtabCursor)
-        cursor.generator = cursor.table.impl.generator()
-        cursor.step()
+        table = self.table_from_pointer(pVtabCursor.pVtab)
+        cursor = self.cursor_from_pointer(pVtabCursor)
+        cursor.generator = table.generator()
+        self.next_(pVtabCursor)
         return self.lib.SQLITE_OK
 
     def best_index(self, tab, pIdxInfo):
         return self.lib.SQLITE_OK
 
 
-class Table:
-    tables = {}
-
-    @classmethod
-    def connect(cls, impl):
-        key = len(cls.tables)
-        table = cls(key, impl)
-        cls.tables[key] = table
-        return table
-
-    @classmethod
-    def from_ptr(cls, ffi, ptr):
-        p = ffi.cast("__myrtle_csv_table *", ptr)
-        return cls.tables[p.table_key]
-
-    def __init__(self, key, impl):
-        self.key = key
-        self.impl = impl
-        self.cursors = {}
-
-    def disconnect(self):
-        del self.tables[self.key]
-
-
 class Cursor:
-    @classmethod
-    def open(cls, table_key):
-        table = Table.tables[table_key]
-        cursor_key = len(table.cursors)
-        table.cursors[cursor_key] = cls(cursor_key, table)
-        return cursor_key
-
-    @classmethod
-    def from_ptr(cls, ffi, ptr):
-        p = ffi.cast("__myrtle_csv_cursor *", ptr)
-        pVtab = ffi.cast("__myrtle_csv_table *", p.base.pVtab)
-        table = Table.from_ptr(ffi, pVtab)
-        return table.cursors[p.cursor_key]
-
-    def __init__(self, key, table):
-        self.key = key
-        self.table = table
+    def __init__(self):
         self.generator = None
         self.next_values = None
         self.done = False
-
-    def step(self):
-        assert self.generator is not None
-        assert not self.done
-
-        try:
-            self.next_values = next(self.generator)
-        except StopIteration:
-            self.next_values = None
-            self.done = True
-
-    def close(self):
-        del self.table.cursors[self.key]
