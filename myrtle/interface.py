@@ -73,7 +73,7 @@ class VirtualTable:
         self.table_cls = table_cls
 
     def table_key_from_pointer(self, ptr):
-        p = self.ffi.cast("__myrtle_csv_table *", ptr)
+        p = self.ffi.cast("__myrtle_table *", ptr)
         return p.table_key
 
     def table_from_pointer(self, ptr):
@@ -81,7 +81,7 @@ class VirtualTable:
         return self.tables[key]
 
     def cursor_key_from_pointer(self, ptr):
-        p = self.ffi.cast("__myrtle_csv_cursor *", ptr)
+        p = self.ffi.cast("__myrtle_cursor *", ptr)
         return p.cursor_key
 
     def cursor_from_pointer(self, ptr):
@@ -90,14 +90,16 @@ class VirtualTable:
 
     def connect(self, db, pAux, argc, argv, ppVtab, pzErr):
         argv = [self.ffi.string(argv[i]).decode("utf8") for i in range(argc)]
-        table = self.table_cls()
-        table.parse_args(argv)
-        key = len(self.tables)
-        sql = f"CREATE TABLE t({', '.join(table.schema())})".encode("utf8")
+        module_name, database_name, table_name, *argv = argv
+        kwargs = dict(arg.split("=") for arg in argv)
+        table = self.table_cls(**kwargs)
+        sql = f"CREATE TABLE t({', '.join(table.schema)})".encode("utf8")
+        print(sql)
         rc = self.sqlite3_api.declare_vtab(db, sql)
         if rc == self.lib.SQLITE_OK:
-            ppVtab[0] = self.sqlite3_api.malloc(self.ffi.sizeof("__myrtle_csv_table"))
-            pVtab = self.ffi.cast("__myrtle_csv_table *", ppVtab[0])
+            ppVtab[0] = self.sqlite3_api.malloc(self.ffi.sizeof("__myrtle_table"))
+            pVtab = self.ffi.cast("__myrtle_table *", ppVtab[0])
+            key = len(self.tables)
             pVtab.table_key = key
             self.tables[key] = table
         else:
@@ -114,8 +116,8 @@ class VirtualTable:
 
     def open_(self, pVtab, ppCursor):
         key = len(self.cursors)
-        ppCursor[0] = self.sqlite3_api.malloc(self.ffi.sizeof("__myrtle_csv_cursor"))
-        pCur = self.ffi.cast("__myrtle_csv_cursor *", ppCursor[0])
+        ppCursor[0] = self.sqlite3_api.malloc(self.ffi.sizeof("__myrtle_cursor"))
+        pCur = self.ffi.cast("__myrtle_cursor *", ppCursor[0])
         pCur.cursor_key = key
         self.cursors[key] = Cursor()
         return self.lib.SQLITE_OK

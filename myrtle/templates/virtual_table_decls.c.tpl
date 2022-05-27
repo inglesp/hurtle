@@ -16,18 +16,6 @@ static int {{ vtab.namespaced_name }}Filter(sqlite3_vtab_cursor *pVtabCursor, in
                         const char *idxStr, int argc, sqlite3_value **argv);
 static int {{ vtab.namespaced_name }}BestIndex(sqlite3_vtab *tab, sqlite3_index_info *pIdxInfo);
 
-typedef struct {{ vtab.namespaced_name }}_table {{ vtab.namespaced_name }}_table;
-struct {{ vtab.namespaced_name }}_table {
-  sqlite3_vtab base;
-  int table_key;
-};
-
-typedef struct {{ vtab.namespaced_name }}_cursor {{ vtab.namespaced_name }}_cursor;
-struct {{ vtab.namespaced_name }}_cursor {
-  sqlite3_vtab_cursor base;
-  int cursor_key;
-};
-
 static sqlite3_module {{ vtab.namespaced_name }}Module = {
   0,                                    /* iVersion */
   {{ vtab.namespaced_name }}Create,     /* xCreate */

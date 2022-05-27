@@ -14,15 +14,3 @@ static int {{ namespaced_name }}Eof(sqlite3_vtab_cursor *cur);
 static int {{ namespaced_name }}Filter(sqlite3_vtab_cursor *pVtabCursor, int idxNum,
                         const char *idxStr, int argc, sqlite3_value **argv);
 static int {{ namespaced_name }}BestIndex(sqlite3_vtab *tab, sqlite3_index_info *pIdxInfo);
-
-typedef struct {{ namespaced_name }}_table {{ namespaced_name }}_table;
-struct {{ namespaced_name }}_table {
-  sqlite3_vtab base;
-  int table_key;
-};
-
-typedef struct {{ namespaced_name }}_cursor {{ namespaced_name }}_cursor;
-struct {{ namespaced_name }}_cursor {
-  sqlite3_vtab_cursor base;
-  int cursor_key;
-};
