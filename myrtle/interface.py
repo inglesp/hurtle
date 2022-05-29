@@ -67,6 +67,7 @@ class VirtualTable:
     cursors = {}
 
     def __init__(self, interface, table_cls):
+        self.interface = interface
         self.ffi = interface.ffi
         self.lib = interface.lib
         self.sqlite3_api = interface.sqlite3_api
@@ -145,8 +146,7 @@ class VirtualTable:
     def column(self, cur, ctx, i):
         cursor = self.cursor_from_pointer(cur)
         value = cursor.next_values[i]
-        SQLITE_TRANSIENT = self.ffi.cast("sqlite3_destructor_type", -1)
-        self.sqlite3_api.result_text(ctx, value.encode("utf8"), -1, SQLITE_TRANSIENT)
+        self.interface.set_result(ctx, value)
         return self.lib.SQLITE_OK
 
     def row_id(self, cur, pRowid):
