@@ -20,6 +20,8 @@ typedef struct sqlite3_backup sqlite3_backup;
 typedef struct sqlite3_vtab sqlite3_vtab;
 typedef struct sqlite3_index_info sqlite3_index_info;
 typedef struct sqlite3_vtab_cursor sqlite3_vtab_cursor;
+typedef struct sqlite3_str sqlite3_str;
+typedef struct sqlite3_file sqlite3_file;
 
 struct sqlite3_vtab {
   const sqlite3_module *pModule;  /* The module for this virtual table */
@@ -328,6 +330,65 @@ struct sqlite3_api_routines {
   int (*bind_pointer)(sqlite3_stmt*,int,void*,const char*,void(*)(void*));
   void (*result_pointer)(sqlite3_context*,void*,const char*,void(*)(void*));
   void *(*value_pointer)(sqlite3_value*,const char*);
+  int (*vtab_nochange)(sqlite3_context*);
+  int (*value_nochange)(sqlite3_value*);
+  const char *(*vtab_collation)(sqlite3_index_info*,int);
+  /* Version 3.24.0 and later */
+  int (*keyword_count)(void);
+  int (*keyword_name)(int,const char**,int*);
+  int (*keyword_check)(const char*,int);
+  sqlite3_str *(*str_new)(sqlite3*);
+  char *(*str_finish)(sqlite3_str*);
+  void (*str_appendf)(sqlite3_str*, const char *zFormat, ...);
+  void (*str_vappendf)();
+  void (*str_append)(sqlite3_str*, const char *zIn, int N);
+  void (*str_appendall)(sqlite3_str*, const char *zIn);
+  void (*str_appendchar)(sqlite3_str*, int N, char C);
+  void (*str_reset)(sqlite3_str*);
+  int (*str_errcode)(sqlite3_str*);
+  int (*str_length)(sqlite3_str*);
+  char *(*str_value)(sqlite3_str*);
+  /* Version 3.25.0 and later */
+  int (*create_window_function)(sqlite3*,const char*,int,int,void*,
+                            void (*xStep)(sqlite3_context*,int,sqlite3_value**),
+                            void (*xFinal)(sqlite3_context*),
+                            void (*xValue)(sqlite3_context*),
+                            void (*xInv)(sqlite3_context*,int,sqlite3_value**),
+                            void(*xDestroy)(void*));
+  /* Version 3.26.0 and later */
+  const char *(*normalized_sql)(sqlite3_stmt*);
+  /* Version 3.28.0 and later */
+  int (*stmt_isexplain)(sqlite3_stmt*);
+  int (*value_frombind)(sqlite3_value*);
+  /* Version 3.30.0 and later */
+  int (*drop_modules)(sqlite3*,const char**);
+  /* Version 3.31.0 and later */
+  sqlite3_int64 (*hard_heap_limit64)(sqlite3_int64);
+  const char *(*uri_key)(const char*,int);
+  const char *(*filename_database)(const char*);
+  const char *(*filename_journal)(const char*);
+  const char *(*filename_wal)(const char*);
+  /* Version 3.32.0 and later */
+  char *(*create_filename)(const char*,const char*,const char*,
+                           int,const char**);
+  void (*free_filename)(char*);
+  sqlite3_file *(*database_file_object)(const char*);
+  /* Version 3.34.0 and later */
+  int (*txn_state)(sqlite3*,const char*);
+  /* Version 3.36.1 and later */
+  sqlite3_int64 (*changes64)(sqlite3*);
+  sqlite3_int64 (*total_changes64)(sqlite3*);
+  /* Version 3.37.0 and later */
+  int (*autovacuum_pages)(sqlite3*,
+     unsigned int(*)(void*,const char*,unsigned int,unsigned int,unsigned int),
+     void*, void(*)(void*));
+  /* Version 3.38.0 and later */
+  int (*error_offset)(sqlite3*);
+  int (*vtab_rhs_value)(sqlite3_index_info*,int,sqlite3_value**);
+  int (*vtab_distinct)(sqlite3_index_info*);
+  int (*vtab_in)(sqlite3_index_info*,int,int);
+  int (*vtab_in_first)(sqlite3_value*,sqlite3_value**);
+  int (*vtab_in_next)(sqlite3_value*,sqlite3_value**);
 };
 
 #define SQLITE_INTEGER  1
