@@ -6,4 +6,4 @@ echo "built!"
 echo
 echo
 echo
-PYTHONPATH=:~/.pyenv/versions/myrtle/lib/python3.10/site-packages ./sqlite-amalgamation-$VERSION/sqlite3 <test.sql
+PYTHONPATH=:~/.pyenv/versions/hurtle/lib/python3.10/site-packages ./sqlite-amalgamation-$VERSION/sqlite3 <test.sql

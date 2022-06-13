@@ -40,7 +40,7 @@ def build_extension(name, functions=None, virtual_tables=None, verbose=True):
 
 
 def render_template(name, ctx):
-    env = Environment(loader=PackageLoader("myrtle"))
+    env = Environment(loader=PackageLoader("hurtle"))
     tpl = env.get_template(name + ".tpl")
 
     rendered = tpl.render(ctx)
@@ -54,7 +54,7 @@ def render_template(name, ctx):
 def common_ctx(name, path):
     return {
         "name": name,
-        "namespaced_name": f"__myrtle_{name}",
+        "namespaced_name": f"__hurtle_{name}",
         "path": path,
     }
 

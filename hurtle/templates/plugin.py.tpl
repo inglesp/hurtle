@@ -1,5 +1,5 @@
-from myrtle.import_helpers import import_attr
-from myrtle.interface import Interface
+from hurtle.import_helpers import import_attr
+from hurtle.interface import Interface
 
 from {{ extension_name }} import ffi, lib
 

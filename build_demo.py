@@ -1,4 +1,4 @@
-from myrtle import build_extension
+from hurtle import build_extension
 
 if __name__ == "__main__":
     build_extension(
