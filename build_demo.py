@@ -1,6 +1,5 @@
 from myrtle import build_extension
 
-
 if __name__ == "__main__":
     build_extension(
         "hurtledemo",

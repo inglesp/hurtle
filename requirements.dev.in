@@ -1,0 +1,7 @@
+black
+flake8
+isort
+pip-tools
+
+# for the demo
+pygithub

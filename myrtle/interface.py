@@ -1,6 +1,6 @@
-from enum import IntEnum
 import inspect
 import json
+from enum import IntEnum
 
 
 # From sqlite3.h, eg SQLITE_INDEX_CONSTRAINT_EQ
