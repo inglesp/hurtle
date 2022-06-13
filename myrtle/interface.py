@@ -1,3 +1,29 @@
+from enum import IntEnum
+import inspect
+import json
+
+
+# From sqlite3.h, eg SQLITE_INDEX_CONSTRAINT_EQ
+class IndexConstraint(IntEnum):
+    EQ = 2
+    GT = 4
+    LE = 8
+    LT = 16
+    GE = 32
+    MATCH = 64
+    LIKE = 65
+    GLOB = 66
+    REGEXP = 67
+    NE = 68
+    ISNOT = 69
+    ISNOTNULL = 70
+    ISNULL = 71
+    IS = 72
+    LIMIT = 73
+    OFFSET = 74
+    FUNCTION = 150
+
+
 class Interface:
     def __init__(self, ffi, lib):
         self.ffi = ffi
@@ -95,7 +121,6 @@ class VirtualTable:
         kwargs = dict(arg.split("=") for arg in argv)
         table = self.table_cls(**kwargs)
         sql = f"CREATE TABLE t({', '.join(table.schema)})".encode("utf8")
-        print(sql)
         rc = self.sqlite3_api.declare_vtab(db, sql)
         if rc == self.lib.SQLITE_OK:
             ppVtab[0] = self.sqlite3_api.malloc(self.ffi.sizeof("__myrtle_table"))
@@ -159,14 +184,54 @@ class VirtualTable:
         cursor = self.cursor_from_pointer(cur)
         return cursor.done
 
+    def best_index(self, tab, pIdxInfo):
+        table = self.table_from_pointer(tab)
+
+        constraints = parse_constraints(
+            table, pIdxInfo.nConstraint, pIdxInfo.aConstraint
+        )
+
+        candidates = {}
+        for method_name, method in inspect.getmembers(table, inspect.ismethod):
+            if not method_name.startswith("select"):
+                continue
+
+            constraint_ixs = get_usable_constraint_ixs(method, constraints)
+            if constraint_ixs is not None:
+                candidates[method_name] = constraint_ixs
+
+        if not candidates:
+            # Given constraints are insufficient to resolve query.
+            return self.lib.SQLITE_CONSTRAINT
+
+        # Choose method that uses most constraints.  We can do better!
+        method_name, usable_constraint_ixs = max(
+            candidates.items(), key=lambda candidate: (len(candidate[1]), candidate[0])
+        )
+
+        for ix in usable_constraint_ixs:
+            pIdxInfo.aConstraintUsage[ix].argvIndex = ix + 1
+
+        idx_data = {"method_name": method_name, "constraints": constraints}
+        idx_str = json.dumps(idx_data).encode("utf8")
+        l = len(idx_str) + 1
+        s = self.sqlite3_api.malloc(l)
+        self.ffi.memmove(s, idx_str, l)
+        pIdxInfo.idxStr = s
+        pIdxInfo.needToFreeIdxStr = True
+
+        return self.lib.SQLITE_OK
+
     def filter_(self, pVtabCursor, idxNum, idxStr, argc, argv):
         table = self.table_from_pointer(pVtabCursor.pVtab)
         cursor = self.cursor_from_pointer(pVtabCursor)
-        cursor.generator = table.generator()
+        idx_data = json.loads(self.ffi.string(idxStr))
+        constraints = idx_data["constraints"]
+        exprs = [self.interface.get_py_val(argv[i]) for i in range(argc)]
+        kwargs = {param_name: exprs[ix] for param_name, ix in constraints.items()}
+        method = getattr(table, idx_data["method_name"])
+        cursor.generator = method(**kwargs)
         self.next_(pVtabCursor)
-        return self.lib.SQLITE_OK
-
-    def best_index(self, tab, pIdxInfo):
         return self.lib.SQLITE_OK
 
 
@@ -175,3 +240,34 @@ class Cursor:
         self.generator = None
         self.next_values = None
         self.done = False
+
+
+def parse_constraints(table, nConstraint, aConstraint):
+    constraints = {}
+
+    for ix in range(nConstraint):
+        pConstraint = aConstraint[ix]
+        # TODO: what if constraint is not usable?
+        if pConstraint.op in [IndexConstraint.LIMIT, IndexConstraint.OFFSET]:
+            continue
+        col_name = table.schema[pConstraint.iColumn]
+        if pConstraint.op == IndexConstraint.EQ:
+            param_name = col_name
+        else:
+            op_name = IndexConstraint(pConstraint.op).name.lower()
+            param_name = f"{col_name}__{op_name}"
+        constraints[param_name] = ix
+
+    return constraints
+
+
+def get_usable_constraint_ixs(method, constraints):
+    sig = inspect.signature(method)
+    for name, param in sig.parameters.items():
+        if param.default == inspect._empty and name not in constraints:
+            # There's no constraint for a required parameter, so these constraints are
+            # not usable.
+            return
+    return [
+        ix for param_name, ix in constraints.items() if param_name in sig.parameters
+    ]
